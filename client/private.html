@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <title>SDP</title>
+        <link rel="stylesheet" href="main.css">
+        <script type="module" src="client.js"></script>
+    </head>
+
+    <body>
+        <h1>The Wall</h1>
+        <h2 id="greeting"></h2>
+        <div id="signBox">
+            <form action="/logout" method="post">
+                <input type="submit" value="SIGN OUT" id="outButton">
+            </form>
+        </div>
+        <div id="mainBox">
+            <p>Items</p>
+            <div id="itemList"></div>
+        </div>
+        <div id="searchBox">
+            <input type="text" id="itemSearch" name="searchText" defaultValue="">
+        </div>
+        <div id="searchResults"></div>
+    </body>
+
+</html>
