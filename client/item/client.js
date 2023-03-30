@@ -4,9 +4,9 @@ const itemButtonBox = document.getElementById("itemButtonBox");
 const itemName = decodeURI(window.location.href.split("/").pop());
 itemNameBox.innerHTML = itemName;
 
-async function highlight(name) {
+async function highlight(name, binid) {
    try {
-      const response = await fetch(`https://walldriver.umass-ece-sdp.tech/v0.1/highlight/access_id:${name},bins:\[00ffaa11\]`);
+      const response = await fetch(`https://walldriver.umass-ece-sdp.tech/v0.1/highlight/access_id:${name},bins:\[${binid}\]`);
       const data = response.json();
       return data;
    }
@@ -24,7 +24,7 @@ function renderTurnOnButton() {
    turnOnButton.addEventListener("click",
       async () => {
          renderLoading();
-         let response = await highlight(itemName);
+         let response = await highlight(itemName, binid);
          console.log(response);
          let color = response.color;
          let bin = response.access_id;

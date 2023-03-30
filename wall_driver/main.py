@@ -1,4 +1,6 @@
+# pyright: reportWildcardImportFromLibrary=false
 from typing import *
+
 
 # if TYPE_CHECKING:
 # from typing_extensions import LiteralString
@@ -7,26 +9,21 @@ T = TypeVar("T")
 
 from flask import Flask
 from flask_restful import reqparse, abort, Api, Resource, fields, marshal_with
-from flask_cors import CORS # very important!!
+from flask_cors import CORS  # very important!!
+from flask import g as shared_state
+
+from the_wall_firmware import bridge_connect, groutio
+from the_wall_firmware.groutio import binuid, color
 
 app = Flask(__name__)
 api = Api(app)
-CORS(app) # very important!!
+CORS(app)  # very important!!
 
 AccessID = NewType("AccessID", str)
-BinUID = NewType("BinUID", str)
-HexColor = NewType("HexColor", str)
 
 
 # === [ config ] ===
 VERSION = "v0.1"
-HARD_CODED_BINS: frozenset[BinUID] = frozenset(
-    (
-        BinUID("00ffaa11"),
-        BinUID("00fd8701"),
-        BinUID("00fh2345"),
-    )
-)
 
 UID_MAX_STR_WIDTH = 8
 
@@ -35,16 +32,6 @@ API_LIST_SEPARATOR = ","
 
 
 _HEX_CHARS = set("123456789ABCDEF")
-
-
-def binuid(__from: str) -> BinUID | None:
-    if len(__from) > UID_MAX_STR_WIDTH:
-        return None
-
-    if not all(char for char in __from.upper() if char in _HEX_CHARS):
-        return None
-
-    return BinUID(__from)
 
 
 # make a conveinieince function to add resources
@@ -69,50 +56,93 @@ def add_resource(
 # api.add_resource(Todo, "/todo/<todo_id>")
 
 
-# private to this module
-def _present_bins(
-    bins: Iterable[BinUID], *, abort_on_fail: bool = False
-) -> tuple[set[BinUID], set[BinUID]]:
-    """
-    :return: (present bins, missing bins)
-    """
-    bins = set(bins)
-    return (bins & HARD_CODED_BINS, bins - HARD_CODED_BINS)
+# # private to this module
+# def _present_bins(
+#     bins: Iterable[ServedBinUID], *, abort_on_fail: bool = False
+# ) -> tuple[set[ServedBinUID], set[ServedBinUID]]:
+#     """
+#     :return: (present bins, missing bins)
+#     """
+#     bins = set(bins)
+#     return (bins & HARD_CODED_BINS, bins - HARD_CODED_BINS)
 
 
 parser = reqparse.RequestParser()
 parser.add_argument("task")
 
 
+def binuid_from_request(uid: str) -> binuid.BinUID | None:
+    if len(uid) > UID_MAX_STR_WIDTH:
+        return None
+
+    if not all(c in _HEX_CHARS for c in uid):
+        return None
+
+    return binuid.fromrawstr(uid)
+
+
 # Todo
 # shows a single todo item and lets you delete a todo item
+
+from datetime import datetime
+
+
+def get_next_color() -> color.Color:
+    if "colors_seq" not in shared_state:
+        shared_state.colors_seq = [
+            color.RED,
+            color.CYAN,
+            color.GREEN,
+            color.MAGENTA,
+            color.BLUE,
+        ]
+
+    ret = shared_state.colors_seq[0]
+    shared_state.colors_seq.append(shared_state.colors_seq.pop(0))
+    return ret
 
 
 @add_resource("/highlight/access_id:<access_id>,bins:[<bins>]")
 class Highlight(Resource):
     class HighightResponse(TypedDict):
-        color: HexColor
+        color: str
         access_id: AccessID
-        failed_bins: list[BinUID]
+        failed_bins: list[binuid.BinUID]
 
     def get(
         self,
         bins: str,
         access_id: AccessID,
     ) -> "Highlight.HighightResponse":
-
-        parsed_bins: set[BinUID] = {
-            b for uid in bins.split(API_LIST_SEPARATOR) if (b := binuid(uid))
+        parsed_bins: set[binuid.BinUID] = {
+            b
+            for uid in bins.split(API_LIST_SEPARATOR)
+            if (b := binuid_from_request(uid))
         }
 
-        _, missing = _present_bins(parsed_bins)
+        highlight_color = get_next_color()
+        try:
+            bridge_connect.transmit(
+                groutio.message.SetBinHighlights(
+                    bins=tuple(parsed_bins),
+                    highlight=highlight_color,
+                    seconds_duration=60,
+                )
+            )
+            bridge_connect.transmit(groutio.message.DisplayHighlightsChanges())
 
-        return self.HighightResponse(
-            color=HexColor("#00ff11"),
-            access_id=access_id,
-            failed_bins=list(missing),
-        )
+            return self.__class__.HighightResponse(
+                color=color.tohex(highlight_color),
+                access_id=access_id,
+                failed_bins=[],
+            )
+        except:
+            return self.__class__.HighightResponse(
+                color=color.tohex(highlight_color),
+                access_id=access_id,
+                failed_bins=list(parsed_bins),
+            )
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=62301) # change the port!
+    app.run(debug=True, port=62301)  # change the port!
